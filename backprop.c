@@ -7,36 +7,16 @@ const int MAX_ITERS = 1000000;
 const double H = 0.01;
 const double ERROR   = 0.00001;
 
-/*
-    Reads images from file
-*/
 int imagesFromFile(char* filename, double** images, int num_to_read, 
                                                         int data_dim);
-
 void recognize(double*** neurons, int num_layers, int* layer_sizes, 
                          double** images, double** results, int num_images, int data_dim);
-
-/*
-    Learns network
-*/
 void learn(double*** neurons, int num_layers, int* layer_sizes, 
             double** exmpls, double** exmpl_vals, int num_exmpls,  int data_dim);
-
-/*
-    sigmoid
-*/
 double activationFunc(double x);
-
-
-/*
-    Weighted sum 
-*/
 double wsum(double* elems, double* coef, int elems_num);
-
-/*
-    Out
-*/
 void out(double** result, int images_num, int results_num);
+double quadError(double* values, double* true_values, int num_values);
 
 
 int main(int argc, char** argv)
@@ -107,42 +87,64 @@ int main(int argc, char** argv)
     return 0;
 }
 
+/*
+Нейроны - коэффициенты от первого уровня до последнего
+layers - значения на уровнях от нулевого уровня до последнего
+нулевой уровень - исходные данные
+последний уровень не включает смещение
+*/
+
 void recognize(double*** neurons, int num_layers, int* layer_sizes, 
-                                     double* image, double* results)
+                                     double* image, double** layers)
 {
+    //размеры уровней включают смещение
     int i,j,k;
     double** layers = (double*)malloc(num_layers*sizeof(double));
-    layers[0] = image;
-    for(i = 1; i < num_layers;i++){
+    for(i = 0; i < num_layers;i++){
         layers[i] = (double*)malloc(layer_sizes[i]*sizeof(double));
-    }
-    
-    for(i = 0; i < num_layers-1; i++){
-        for(j = 0; j < layer_sizes[i]; j++){
-            layers[i] = activationFunc(wsum(neurons[i][j],layers[i],layer_sizes[i]));
+        if(i != num_layers-1){
+            //смещение
+            layers[i][0] = 1;
         }
     }
-
-    for(i = 0; i < layer_sizes[num_layers-1]; i++){
-        results[i] = layers[num_layers-1][i];
+    for(i = 0; i < num_layers; i++){
+        for(j = 1; j < layer_sizes[i]; j++){
+            //для нулевого уровня просто копируем изображение
+            //для последующих вычисляем функцию активации
+            if(i == 0){
+                layers[0][j] = image[i-1];
+            } else {
+                layers[i][j] = activationFunc(wsum(neurons[i][j],layers[i-1],
+                                                           layer_sizes[i-1]));
+            }
+        }
     }
-
-    free(layers);
 }
 
-/*
-    Learns network
-*/
+double quadError(double* values, double* true_values, int num_values)
+{
+    //пропускает смещение
+    int i;
+    double result = 0.,temp;
+    for(i = 1; i < num_values; i++){
+        temp = true_values[i] - values[i];
+        result += temp*temp;
+    }
+    return result/2.;
+}
+
 void learn(double*** neurons, int num_layers, int* layer_sizes, 
             double** exmpls, double** exmpl_vals, int num_exmpls, int data_dim)
 {
     int i,j,k,m;
-    double ws,out,e;
+    double ws,out,e,temp;
+    double* sigmas = (double**)malloc(num_layers*sizeof(double*));
     //инициализируем случайными значениями
-    for(j = 0; j < num_layers; j++){
-        for(k = 0; k < layer_sizes[j]; k++){
-            for(m = 0; m < layer_sizes[j-1]; m++){
-                neurons[j][k][m] = 1./(double)rand(1000);
+    for(i = 0; i < num_layers-1; i++){
+        for(j = 0; j < layer_sizes[i+1]; j++){
+            for(k = 0; k < layer_sizes[i]; k++){
+                sigmas[i] = (double*)malloc(layer_sizes[k]*sizeof(double));
+                neurons[i][j][k] = 1./(double)rand(1000);
             }
         }
     }
@@ -150,12 +152,28 @@ void learn(double*** neurons, int num_layers, int* layer_sizes,
     for(i = 0; i < num_exmpls; i++){
         while(k < NUM_STEPS && e < ERROR){
         //с каждым примером
-            for(j = 0; j < num_layers; j++){
-                //на каждом слое
-            }
+            //прямое распространение
+            recognize(neurons, num_layers, layer_sizes, exmpls[i], sigmas);
 
+            //обратное распространение
+            //выходной уровень
+            for(i = 0; i < layer_sizes[num_layers-1]; i ++){
+                sigmas[0] = sigmas[0][i]*(1. - sigmas[0][i])*(sigmas[0][i] - exmpl_vals[i]);
+            }
+            //скрытые уровни
+            for(i = num_layers - 2; i > 1; i--){
+                for (int j = 0; j < layer_sizes[i]; j++){
+                    //коэффициенты нейрона проверить
+                    //что с чем??
+                    for(k = 0; k < layer_sizes[i+1]; k++){
+                        temp = neurons[i][j][k]*sigmas[i+1][k];
+                    }
+                    sigmas[i][j] = sigmas[i][j]*(1-sigmas[i][j])*temp;
+                }
+            }
         }
     }
+    free(sigmas);
 }
 
 int imagesFromFile(char* filename, double** images, int num_to_read, int data_dim)
